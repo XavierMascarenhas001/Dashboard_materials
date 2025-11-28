@@ -780,60 +780,6 @@ if resume_file is not None:
         except Exception as e:
             st.warning(f"Could not generate projects timeline chart: {e}")
 
-    # Display Total & Variation
-    col_top_left, col_top_right = st.columns([1, 1])
-    with col_top_left:
-        
-        # --- Top-left Pie Chart: Projects Distribution ---
-        try:
-            if 'filtered_df' in locals() and not filtered_df.empty and 'project' in filtered_df.columns:
-                
-                # Count projects and get top projects
-                project_counts = filtered_df['project'].value_counts().reset_index()
-                project_counts.columns = ['Project', 'Count']
-                
-                # If too many projects, group smaller ones into "Other"
-                if len(project_counts) > 8:
-                    top_projects = project_counts.head(7)
-                    other_count = project_counts['Count'].iloc[7:].sum()
-                    other_row = pd.DataFrame({'Project': ['Other'], 'Count': [other_count]})
-                    project_data = pd.concat([top_projects, other_row], ignore_index=True)
-                else:
-                    project_data = project_counts
-                
-                # Create pie chart
-                fig_projects = px.pie(
-                    project_data,
-                    names='Project',
-                    values='Count',
-                    title="Distribution per project",
-                    hole=0.4
-                )
-                fig_projects.update_traces(
-                    textinfo='percent+label',
-                    textfont_size=14,
-                    marker=dict(line=dict(color='#000000', width=1))
-                )
-                fig_projects.update_layout(
-                    title_text="Projects Distribution",
-                    title_font_size=16,
-                    font=dict(color='white'),
-                    paper_bgcolor='rgba(0,0,0,0)',
-                    plot_bgcolor='rgba(0,0,0,0)',
-                    showlegend=False,
-                    annotations=[dict(text=f'Total<br>{len(filtered_df)}', x=0.5, y=0.5, font_size=16, showarrow=False)]
-                )
-                
-                st.plotly_chart(fig_projects, use_container_width=True)
-                
-            else:
-                st.info("No project data available for the selected filters.")
-                
-        except Exception as e:
-            st.warning(f"Could not generate projects pie chart: {e}")
-            
-    with col_top_right:
-        st.markdown("<h3 style='text-align:center; color:white;'>Works Complete</h3>", unsafe_allow_html=True)
 
     # Display Total & Variation
     col_top_left, col_top_right = st.columns([1, 1])
