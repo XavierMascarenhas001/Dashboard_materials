@@ -722,7 +722,6 @@ if resume_file is not None:
     with col_top_right:
         st.markdown("<h3 style='text-align:center; color:white;'>Works Complete </h3>", unsafe_allow_html=True)
 
-
 '''
         # --- Top-right Pie Chart: % Complete ---
         try:
@@ -784,7 +783,6 @@ if resume_file is not None:
         except Exception as e:
             st.warning(f"Could not generate % Complete pie chart: {e}")
 '''
-
         # --- Top-right Chart: Projects Distribution Over Time ---
         try:
             # Use the filtered_df that has been through all the sidebar filters
