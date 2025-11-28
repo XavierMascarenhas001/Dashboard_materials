@@ -736,29 +736,41 @@ if resume_file is not None:
                         revenue_by_date = chart_df.groupby('datetouse_dt')['total'].sum().reset_index()
                         revenue_by_date = revenue_by_date.sort_values('datetouse_dt')
                         
+                        # Format the revenue numbers for better readability
+                        revenue_by_date['total_formatted'] = revenue_by_date['total'].apply(
+                            lambda x: f"€{x:,.0f}" if x >= 1000 else f"€{x:.0f}"
+                        )
+                        
                         # Create the line chart
                         fig_revenue = px.line(
                             revenue_by_date, 
                             x='datetouse_dt', 
                             y='total',
                             title="Daily Revenue",
-                            labels={'datetouse_dt': 'Date', 'total': 'Revenue'}
+                            labels={'datetouse_dt': 'Date', 'total': 'Revenue (€)'}
                         )
                         fig_revenue.update_traces(
                             mode='lines+markers',
-                            line=dict(width=3),
-                            marker=dict(size=6)
+                            line=dict(width=3, color='#32CD32'),
+                            marker=dict(size=6, color='#32CD32'),
+                            hovertemplate='<b>Date: %{x}</b><br>Revenue: €%{y:,.0f}<extra></extra>'
                         )
                         fig_revenue.update_layout(
                             xaxis=dict(
-                                tickformat="%Y-%m-%d",
-                                tickangle=45
+                                tickformat="%b %Y",
+                                tickangle=45,
+                                gridcolor='rgba(128,128,128,0.2)'
                             ),
-                            yaxis=dict(title='Revenue'),
+                            yaxis=dict(
+                                title='Revenue (€)',
+                                tickformat=",.0f",
+                                gridcolor='rgba(128,128,128,0.2)'
+                            ),
                             paper_bgcolor='rgba(0,0,0,0)',
                             plot_bgcolor='rgba(0,0,0,0)',
                             font=dict(color='white'),
-                            title_font_size=16
+                            title_font_size=16,
+                            hovermode='x unified'
                         )
                         
                         # Display in top-right column
@@ -773,7 +785,6 @@ if resume_file is not None:
 
             except Exception as e:
                 st.warning(f"Could not generate revenue chart: {e}")
-
 
     # Display Total & Variation
     col_top_left, col_top_right = st.columns([1, 1])
