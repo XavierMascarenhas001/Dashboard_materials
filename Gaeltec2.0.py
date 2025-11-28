@@ -1017,6 +1017,7 @@ if resume_file is not None:
                 st.rerun()
             
             selected_rows = sub_df[sub_df['mapped'] == selected_mapping].copy()
+            selected_rows.columns = selected_rows.columns.str.strip().str.lower()
             selected_rows = selected_rows.loc[:, ~selected_rows.columns.duplicated()]
 
             if 'datetouse' in selected_rows.columns:
