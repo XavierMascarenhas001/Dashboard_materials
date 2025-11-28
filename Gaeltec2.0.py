@@ -779,7 +779,11 @@ if resume_file is not None:
 
         except Exception as e:
             st.warning(f"Could not generate projects timeline chart: {e}")
-            
+
+    # Display Total & Variation
+    col_top_left, col_top_right = st.columns([1, 1])
+    with col_top_left:
+        
         # --- Top-left Pie Chart: Projects Distribution ---
         try:
             if 'filtered_df' in locals() and not filtered_df.empty and 'project' in filtered_df.columns:
