@@ -721,6 +721,115 @@ if resume_file is not None:
         )
     with col_top_right:
         st.markdown("<h3 style='text-align:center; color:white;'>Works Complete </h3>", unsafe_allow_html=True)
+
+        # --- Top-right Chart: Projects Distribution Over Time ---
+        try:
+            # Use the filtered_df that has been through all the sidebar filters
+            if 'filtered_df' in locals() and not filtered_df.empty:
+                
+                # Prepare data for the chart - exclude blanks and dates before 2000
+                chart_df = filtered_df[filtered_df['datetouse_dt'].notna()].copy()
+                chart_df = chart_df[chart_df['datetouse_dt'] >= '2000-01-01']
+                
+                if not chart_df.empty:
+                    # Group by date and count projects
+                    date_counts = chart_df.groupby('datetouse_dt').size().reset_index(name='count')
+                    date_counts = date_counts.sort_values('datetouse_dt')
+                    
+                    # Create the line chart
+                    fig_timeline = px.line(
+                        date_counts, 
+                        x='datetouse_dt', 
+                        y='count',
+                        title="Projects Timeline (Since 2000)",
+                        labels={'datetouse_dt': 'Date', 'count': 'Number of Projects'}
+                    )
+                    fig_timeline.update_traces(
+                        mode='lines+markers',
+                        line=dict(width=3),
+                        marker=dict(size=6)
+                    )
+                    fig_timeline.update_layout(
+                        xaxis=dict(
+                            tickformat="%Y-%m-%d",
+                            tickangle=45
+                        ),
+                        yaxis=dict(title='Number of Projects'),
+                        paper_bgcolor='rgba(0,0,0,0)',
+                        plot_bgcolor='rgba(0,0,0,0)',
+                        font=dict(color='white'),
+                        title_font_size=16
+                    )
+                    
+                    # Display in top-right column
+                    if 'col_top_right' in locals():
+                        col_top_right.plotly_chart(fig_timeline, use_container_width=True)
+                    else:
+                        st.plotly_chart(fig_timeline, use_container_width=True)
+                    
+                else:
+                    # Show info if no valid dates after filtering
+                    if 'col_top_right' in locals():
+                        col_top_right.info("No projects with dates since 2000 for selected filters.")
+                    else:
+                        st.info("No projects with dates since 2000 for selected filters.")
+                        
+            else:
+                st.info("No data available for the selected filters.")
+
+        except Exception as e:
+            st.warning(f"Could not generate projects timeline chart: {e}")
+            
+        # --- Top-left Pie Chart: Projects Distribution ---
+        try:
+            if 'filtered_df' in locals() and not filtered_df.empty and 'project' in filtered_df.columns:
+                
+                # Count projects and get top projects
+                project_counts = filtered_df['project'].value_counts().reset_index()
+                project_counts.columns = ['Project', 'Count']
+                
+                # If too many projects, group smaller ones into "Other"
+                if len(project_counts) > 8:
+                    top_projects = project_counts.head(7)
+                    other_count = project_counts['Count'].iloc[7:].sum()
+                    other_row = pd.DataFrame({'Project': ['Other'], 'Count': [other_count]})
+                    project_data = pd.concat([top_projects, other_row], ignore_index=True)
+                else:
+                    project_data = project_counts
+                
+                # Create pie chart
+                fig_projects = px.pie(
+                    project_data,
+                    names='Project',
+                    values='Count',
+                    title="Projects Distribution",
+                    hole=0.4
+                )
+                fig_projects.update_traces(
+                    textinfo='percent+label',
+                    textfont_size=14,
+                    marker=dict(line=dict(color='#000000', width=1))
+                )
+                fig_projects.update_layout(
+                    title_text="Projects Distribution",
+                    title_font_size=16,
+                    font=dict(color='white'),
+                    paper_bgcolor='rgba(0,0,0,0)',
+                    plot_bgcolor='rgba(0,0,0,0)',
+                    showlegend=False,
+                    annotations=[dict(text=f'Total<br>{len(filtered_df)}', x=0.5, y=0.5, font_size=16, showarrow=False)]
+                )
+                
+                st.plotly_chart(fig_projects, use_container_width=True)
+                
+            else:
+                st.info("No project data available for the selected filters.")
+                
+        except Exception as e:
+            st.warning(f"Could not generate projects pie chart: {e}")
+            
+    with col_top_right:
+        st.markdown("<h3 style='text-align:center; color:white;'>Works Complete</h3>", unsafe_allow_html=True)
         # --- Top-right Pie Chart: % Complete ---
         try:
             # Ensure resume_df exists
