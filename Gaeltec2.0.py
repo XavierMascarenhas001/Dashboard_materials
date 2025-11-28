@@ -731,6 +731,12 @@ if resume_file is not None:
                     chart_df = filtered_df[filtered_df['datetouse_dt'].notna()].copy()
                     chart_df = chart_df[chart_df['datetouse_dt'] >= '2000-01-01']
                     
+                    # Convert total column to numeric, handling errors
+                    chart_df['total'] = pd.to_numeric(chart_df['total'], errors='coerce')
+                    
+                    # Remove any rows where total conversion failed
+                    chart_df = chart_df[chart_df['total'].notna()]
+                    
                     if not chart_df.empty:
                         # Group by date and SUM the total column (not count projects)
                         revenue_by_date = chart_df.groupby('datetouse_dt')['total'].sum().reset_index()
