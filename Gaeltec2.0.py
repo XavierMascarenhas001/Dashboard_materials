@@ -13,6 +13,8 @@ import base64
 from streamlit_plotly_events import plotly_events
 import plotly.graph_objects as go
 import matplotlib.pyplot as plt
+import requests
+from streamlit import cache_data
 
 # --- Page config for wide layout ---
 st.set_page_config(
