@@ -834,6 +834,12 @@ if resume_file is not None:
             
     with col_top_right:
         st.markdown("<h3 style='text-align:center; color:white;'>Works Complete</h3>", unsafe_allow_html=True)
+
+    # Display Total & Variation
+    col_top_left, col_top_right = st.columns([1, 1])
+    with col_top_left:
+        st.markdown("<h3 style='text-align:center; color:white;'>Works Complete</h3>", unsafe_allow_html=True)
+        
         # --- Top-left Pie Chart: % Complete ---
         try:
             # Ensure resume_df exists
@@ -890,7 +896,7 @@ if resume_file is not None:
 
         except Exception as e:
             st.warning(f"Could not generate % Complete pie chart: {e}")
-            
+
     with col_top_right:
         st.markdown("<h3 style='text-align:center; color:white;'>Projects Distribution</h3>", unsafe_allow_html=True)
         # --- Top-right Pie Chart: Projects Distribution ---
