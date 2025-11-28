@@ -869,7 +869,7 @@ if resume_file is not None:
             else:
                 st.info("Project or Segment Code columns not found in the data.")
         
-        with col_left_bottom:
+        with col_top_right:
             st.markdown("<h3 style='text-align:center; color:white;'>Works Complete</h3>", unsafe_allow_html=True)
             # --- Pie Chart: % Complete ---
             try:
@@ -1005,30 +1005,8 @@ if resume_file is not None:
 
 
     with col_desc:
-        st.markdown("<h3 style='color:white;'>Projects & Segments Overview</h3>", unsafe_allow_html=True)
+        st.markdown("<h3 style='color:white;'>Weather </h3>", unsafe_allow_html=True)
 
-        if 'project' in filtered_df.columns and 'segmentcode' in filtered_df.columns:
-            projects = filtered_df['project'].dropna().unique()
-            if len(projects) == 0:
-                st.info("No projects found for the selected filters.")
-            else:
-                for proj in sorted(projects):
-                    segments = filtered_df[filtered_df['project'] == proj]['segmentcode'].dropna().unique()
-                
-                    # Use expander to make segment list scrollable
-                    with st.expander(f"Project: {proj} ({len(segments)} segments)"):
-                        if len(segments) > 0:
-                            # Scrollable container for segments
-                            st.markdown(
-                                "<div style='max-height:150px; overflow-y:auto; padding:5px; border:1px solid #444;'>"
-                                + "<br>".join(segments.astype(str))
-                                + "</div>",
-                                unsafe_allow_html=True
-                            )
-                        else:
-                            st.write("No segment codes for this project.")
-        else:
-            st.info("Project or Segment Code columns not found in the data.")
 
 # -------------------------------
 # --- Mapping Bar Charts + Drill-down + Excel Export ---
