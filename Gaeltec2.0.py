@@ -719,9 +719,68 @@ if resume_file is not None:
             """,
             unsafe_allow_html=True
         )
+        
     with col_top_right:
         st.markdown("<h3 style='text-align:center; color:white;'>Works Complete </h3>", unsafe_allow_html=True)
+        # --- Top-left Pie Chart: % Complete ---
+        try:
+            # Ensure resume_df exists
+            if 'resume_df' in locals():
 
+                # Normalize both columns to lowercase strings without extra spaces
+                filtered_segments = filtered_df['segment'].dropna().astype(str).str.strip().str.lower().unique()
+                resume_df['section'] = resume_df['section'].dropna().astype(str).str.strip().str.lower()
+
+                # Check if necessary columns exist in resume_df
+                if {'section', '%complete'}.issubset(resume_df.columns):
+
+                    # Filter resume to only include relevant sections
+                    resume_filtered = resume_df[resume_df['section'].isin(filtered_segments)]
+
+                    if not resume_filtered.empty:
+                        avg_complete = resume_filtered['%complete'].mean()
+                        avg_complete = min(max(avg_complete, 0), 100)  # clamp 0-100
+
+                        # Pie chart data
+                        pie_data = pd.DataFrame({
+                            'Status': ['Completed', 'Done or Remaining'],
+                            'Value': [avg_complete, 100 - avg_complete]
+                        })
+
+                        # Plot pie chart
+                        fig_pie = px.pie(
+                            pie_data,
+                            names='Status',
+                            values='Value',
+                            color='Status',
+                            color_discrete_map={'Completed': 'green', 'Done or Remaining': 'red'},
+                            hole=0.6
+                        )
+                        fig_pie.update_traces(
+                            textinfo='percent+label',
+                            textfont_size=20
+                        )
+                        fig_pie.update_layout(
+                            title_text="",
+                            title_font_size=20,
+                            font=dict(color='white'),
+                            paper_bgcolor='rgba(0,0,0,0)',
+                            plot_bgcolor='rgba(0,0,0,0)',
+                            showlegend=True,
+                            legend=dict(font=dict(color='white'))
+                        )
+
+                        # Display in top-left column
+                        st.plotly_chart(fig_pie, use_container_width=True)
+
+                    else:
+                        st.info("No matching sections found for the selected filters to generate % completion chart.")
+
+        except Exception as e:
+            st.warning(f"Could not generate % Complete pie chart: {e}")
+
+    with col_top_right:
+        st.markdown("<h3 style='text-align:center; color:white;'>Works Complete </h3>", unsafe_allow_html=True)
         # --- Top-right Chart: Projects Distribution Over Time ---
         try:
             # Use the filtered_df that has been through all the sidebar filters
@@ -851,13 +910,13 @@ if resume_file is not None:
                 
                 # Count projects and get top projects
                 project_counts = filtered_df['project'].value_counts().reset_index()
-                project_counts.columns = ['Project', 'Count']
+                project_counts.columns = ['Project', 'total']
                 
                 # If too many projects, group smaller ones into "Other"
                 if len(project_counts) > 8:
                     top_projects = project_counts.head(7)
-                    other_count = project_counts['Count'].iloc[7:].sum()
-                    other_row = pd.DataFrame({'Project': ['Other'], 'Count': [other_count]})
+                    other_count = project_counts['total'].iloc[7:].sum()
+                    other_row = pd.DataFrame({'Project': ['Other'], 'total': [other_count]})
                     project_data = pd.concat([top_projects, other_row], ignore_index=True)
                 else:
                     project_data = project_counts
@@ -866,7 +925,7 @@ if resume_file is not None:
                 fig_projects = px.pie(
                     project_data,
                     names='Project',
-                    values='Count',
+                    values='total',
                     title="",
                     hole=0.4
                 )
@@ -892,6 +951,98 @@ if resume_file is not None:
                 
         except Exception as e:
             st.warning(f"Could not generate projects pie chart: {e}")
+
+    # Display Total & Variation
+    col_top_left, col_top_right = st.columns([1, 1])
+    with col_top_left:
+        # Left side: Projects & Segments Overview and Works Complete pie chart
+        col_left_top, col_left_bottom = st.columns([1, 1])
+        
+        with col_left_top:
+            st.markdown("<h3 style='color:white;'>Projects & Segments Overview</h3>", unsafe_allow_html=True)
+
+            if 'project' in filtered_df.columns and 'segmentcode' in filtered_df.columns:
+                projects = filtered_df['project'].dropna().unique()
+                if len(projects) == 0:
+                    st.info("No projects found for the selected filters.")
+                else:
+                    for proj in sorted(projects):
+                        segments = filtered_df[filtered_df['project'] == proj]['segmentcode'].dropna().unique()
+                    
+                        # Use expander to make segment list scrollable
+                        with st.expander(f"Project: {proj} ({len(segments)} segments)"):
+                            if len(segments) > 0:
+                                # Scrollable container for segments
+                                st.markdown(
+                                    "<div style='max-height:150px; overflow-y:auto; padding:5px; border:1px solid #444;'>"
+                                    + "<br>".join(segments.astype(str))
+                                    + "</div>",
+                                    unsafe_allow_html=True
+                                )
+                            else:
+                                st.write("No segment codes for this project.")
+            else:
+                st.info("Project or Segment Code columns not found in the data.")
+        
+        with col_left_bottom:
+            st.markdown("<h3 style='text-align:center; color:white;'>Works Complete</h3>", unsafe_allow_html=True)
+            # --- Pie Chart: % Complete ---
+            try:
+                # Ensure resume_df exists
+                if 'resume_df' in locals():
+
+                    # Normalize both columns to lowercase strings without extra spaces
+                    filtered_segments = filtered_df['segment'].dropna().astype(str).str.strip().str.lower().unique()
+                    resume_df['section'] = resume_df['section'].dropna().astype(str).str.strip().str.lower()
+
+                    # Check if necessary columns exist in resume_df
+                    if {'section', '%complete'}.issubset(resume_df.columns):
+
+                        # Filter resume to only include relevant sections
+                        resume_filtered = resume_df[resume_df['section'].isin(filtered_segments)]
+
+                        if not resume_filtered.empty:
+                            avg_complete = resume_filtered['%complete'].mean()
+                            avg_complete = min(max(avg_complete, 0), 100)  # clamp 0-100
+
+                            # Pie chart data
+                            pie_data = pd.DataFrame({
+                                'Status': ['Completed', 'Done or Remaining'],
+                                'Value': [avg_complete, 100 - avg_complete]
+                            })
+
+                            # Plot pie chart
+                            fig_pie = px.pie(
+                                pie_data,
+                                names='Status',
+                                values='Value',
+                                color='Status',
+                                color_discrete_map={'Completed': 'green', 'Done or Remaining': 'red'},
+                                hole=0.6
+                            )
+                            fig_pie.update_traces(
+                                textinfo='percent+label',
+                                textfont_size=20
+                            )
+                            fig_pie.update_layout(
+                                title_text="",
+                                title_font_size=20,
+                                font=dict(color='white'),
+                                paper_bgcolor='rgba(0,0,0,0)',
+                                plot_bgcolor='rgba(0,0,0,0)',
+                                showlegend=True,
+                                legend=dict(font=dict(color='white'))
+                            )
+
+                            # Display pie chart
+                            st.plotly_chart(fig_pie, use_container_width=True)
+
+                        else:
+                            st.info("No matching sections found for the selected filters to generate % completion chart.")
+
+            except Exception as e:
+                st.warning(f"Could not generate % Complete pie chart: {e}")
+
 
     # -------------------------------
     # --- Map Section ---
