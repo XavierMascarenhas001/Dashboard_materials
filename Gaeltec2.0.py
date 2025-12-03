@@ -830,9 +830,14 @@ if resume_file is not None:
                         )
                         fig_revenue.update_layout(
                             xaxis=dict(
-                                tickformat="%b %Y",
+                                tickformatstops=[
+                                    dict(dtickrange=[None, 1000*60*60*24*30], value="%d %b %Y"),  # zoomed in: show days
+                                    dict(dtickrange=[1000*60*60*24*30, None], value="%b %Y")        # zoomed out: show months
+                                ],
                                 tickangle=45,
-                                gridcolor='rgba(128,128,128,0.2)'
+                                gridcolor='rgba(128,128,128,0.2)',
+                                rangeslider=dict(visible=True),  # optional range slider
+                                type='date'
                             ),
                             yaxis=dict(
                                 title='Revenue (€)',
