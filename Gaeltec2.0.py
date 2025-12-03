@@ -788,7 +788,8 @@ if resume_file is not None:
             """,
             unsafe_allow_html=True
         )
-
+    except Exception as e:
+        st.warning(f"Could not display Total & Variation: {e}")
     # -------------------------------
     # --- Revenue Chart (Full Width) ---
     # -------------------------------
