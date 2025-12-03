@@ -822,6 +822,7 @@ if resume_file is not None:
                     hovertemplate='<b>Date: %{x}</b><br>Revenue: €%{y:,.0f}<extra></extra>'
                 )
                 fig_revenue.update_layout(
+                    height=600,  # <-- Increase the chart height
                     xaxis=dict(
                         tickformatstops=[
                             dict(dtickrange=[None, 1000*60*60*24*30], value="%d %b %Y"),
