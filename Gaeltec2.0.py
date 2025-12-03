@@ -805,7 +805,7 @@ if resume_file is not None:
                 revenue_by_date = chart_df.groupby('datetouse_dt')['total'].sum().reset_index()
                 revenue_by_date = revenue_by_date.sort_values('datetouse_dt')
                 revenue_by_date['total_formatted'] = revenue_by_date['total'].apply(
-                    lambda x: f"€{x:,.0f}" if x >= 1000 else f"€{x:.0f}"
+                    lambda x: f"£{x:,.0f}" if x >= 1000 else f"€{x:.0f}"
                 )
 
                 fig_revenue = px.line(
@@ -856,13 +856,10 @@ if resume_file is not None:
     except Exception as e:
         st.warning(f"Could not generate revenue chart: {e}")
                 
-    # Display Total & Variation
+    # Display Project and completion
     col_top_left, col_top_right = st.columns([1, 1])
+    # Project Completion
     with col_top_left:
-        st.markdown("<h3 style='text-align:center; color:white;'>Works Complete</h3>", unsafe_allow_html=True)
-        
-
-    with col_top_right:
         st.markdown("<h3 style='text-align:center; color:white;'>Projects Distribution</h3>", unsafe_allow_html=True)
         # --- Top-right Pie Chart: Projects Distribution ---
         try:
@@ -912,9 +909,8 @@ if resume_file is not None:
         except Exception as e:
             st.warning(f"Could not generate projects pie chart: {e}")
 
-    # Display Total & Variation
-    col_top_left, col_top_right = st.columns([1, 1])
-    with col_top_left:
+    # Works total
+    with col_top_right:
         # Left side: Projects & Segments Overview and Works Complete pie chart
         col_left_top, col_left_bottom = st.columns([1, 1])
         
