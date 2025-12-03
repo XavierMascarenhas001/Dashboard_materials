@@ -787,9 +787,8 @@ if resume_file is not None:
             unsafe_allow_html=True
         )
 
-        with col_top_right:
             st.markdown("<h3 style='text-align:center; color:white;'>Revenue</h3>", unsafe_allow_html=True)
-            # --- Top-right Chart: Revenue Over Time ---
+            # --- Top-right Chart: Revenue Over Time (Full Width) ---
             try:
                 # Use the filtered_df that has been through all the sidebar filters
                 if 'filtered_df' in locals() and not filtered_df.empty and 'total' in filtered_df.columns:
@@ -851,11 +850,10 @@ if resume_file is not None:
                             hovermode='x unified'
                         )
                         
-                        # Display in top-right column
+                        # Display full width
                         st.plotly_chart(fig_revenue, use_container_width=True)
                         
                     else:
-                        # Show info if no valid dates after filtering
                         st.info("No projects with dates since 2000 for selected filters.")
                             
                 else:
