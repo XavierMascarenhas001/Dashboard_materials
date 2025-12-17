@@ -9,3 +9,5 @@ streamlit-plotly-events
 pyarrow
 openpyxl
 matplotlib
+python-docx
+
