@@ -23,7 +23,6 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 from difflib import SequenceMatcher
 from rapidfuzz import fuzz, process
-from fuzzywuzzy import fuzz, process
 
 # --- Page config for wide layout ---
 st.set_page_config(
