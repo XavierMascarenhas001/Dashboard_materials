@@ -19,6 +19,10 @@ from docx import Document
 from docx.shared import Pt
 from docx.enum.text import WD_COLOR_INDEX
 from collections import OrderedDict
+import pyarrow as pa
+import pyarrow.parquet as pq
+from difflib import SequenceMatcher
+from rapidfuzz import fuzz, process
 
 # --- Page config for wide layout ---
 st.set_page_config(
@@ -770,31 +774,107 @@ if misc_file is not None:
     except Exception as e:
         st.warning(f"Could not load Miscellaneous parquet: {e}")
 
-    # -------------------------------
-    # --- Sidebar Filters ---
-    # -------------------------------
-    st.sidebar.header("Filter Options")
+# -------------------------------
+# --- Upload Planning / Scope Parquet ---
+# -------------------------------
+pid_file = st.sidebar.file_uploader(
+    "Upload Planning / Scope Parquet",
+    type=["parquet"],
+    help="Contains project, shire, project description and material scope"
+)
 
-    def multi_select_filter(col_name, label, df, parent_filter=None):
-        """Helper for multiselect filter, handles 'All' selection."""
-        if col_name not in df.columns:
-            return ["All"], df
-        temp_df = df.copy()
-        if parent_filter is not None and "All" not in parent_filter[1]:
-            temp_df = temp_df[temp_df[parent_filter[0]].isin(parent_filter[1])]
-        options = ["All"] + sorted(temp_df[col_name].dropna().unique())
-        selected = st.sidebar.multiselect(label, options, default=["All"])
-        if "All" not in selected:
-            temp_df = temp_df[temp_df[col_name].isin(selected)]
-        return selected, temp_df
+pid_df = None
+if pid_file is not None:
+    pid_df = pd.read_parquet(pid_file)
+    pid_df.columns = pid_df.columns.str.strip().str.lower()
+    st.sidebar.success(f"Metadata file loaded: {pid_file.name}")
 
-    selected_shire, filtered_df = multi_select_filter('shire', "Select Shire", df)
-    selected_project, filtered_df = multi_select_filter('project', "Select Project", filtered_df,
-                                                        parent_filter=('shire', selected_shire))
-    selected_pm, filtered_df = multi_select_filter('projectmanager', "Select Project Manager", filtered_df,
-                                                   parent_filter=('shire', selected_shire))
-    selected_segment, filtered_df = multi_select_filter('segmentcode', "Select Segment Code", filtered_df)
-    selected_type, filtered_df = multi_select_filter('type', "Select Type", filtered_df)
+# -------------------------------
+# --- Merge Aggregated DF with Metadata ---
+# -------------------------------
+enriched_df = agg_view.copy()
+
+if pid_df is not None:
+    # Normalize text columns
+    for col in ["project", "shire"]:
+        enriched_df[col] = enriched_df[col].astype(str).str.strip().str.lower()
+        pid_df[col] = pid_df[col].astype(str).str.strip().str.lower()
+    
+    # Exact merge on project & shire
+    enriched_df = enriched_df.merge(
+        pid_df,
+        on=["project", "shire"],
+        how="left",
+        suffixes=("", "_meta")
+    )
+    
+    # Optional fuzzy matching for project description
+    allow_fuzzy = st.sidebar.checkbox(
+        "Allow fuzzy matching between Segment and Project Description (≥70%)",
+        value=True
+    )
+    
+    if allow_fuzzy and "project_description" in pid_df.columns and "segmentdesc" in enriched_df.columns:
+        project_desc_list = pid_df["project_description"].dropna().unique().tolist()
+        
+        def fuzzy_match_segment(segment_desc, project_desc_list):
+            if pd.isna(segment_desc):
+                return None, 0
+            match, score = process.extractOne(segment_desc, project_desc_list, scorer=fuzz.partial_ratio)
+            return match, score
+        
+        fuzzy_results = enriched_df.apply(
+            lambda row: fuzzy_match_segment(row.get("segmentdesc", ""), project_desc_list),
+            axis=1,
+            result_type="expand"
+        )
+        enriched_df["matched_project_description"] = fuzzy_results[0]
+        enriched_df["match_score"] = fuzzy_results[1]
+        
+        # Only keep matches ≥70%
+        enriched_df.loc[enriched_df["match_score"] < 70, "matched_project_description"] = None
+    else:
+        enriched_df["matched_project_description"] = None
+        enriched_df["match_score"] = None
+
+# -------------------------------
+# --- Sidebar Filters ---
+# -------------------------------
+st.sidebar.header("Filter Options")
+
+def multi_select_filter(col_name, label, df, parent_filter=None):
+    if col_name not in df.columns:
+        return ["All"], df
+    temp_df = df.copy()
+    if parent_filter is not None and "All" not in parent_filter[1]:
+        temp_df = temp_df[temp_df[parent_filter[0]].isin(parent_filter[1])]
+    options = ["All"] + sorted(temp_df[col_name].dropna().unique())
+    selected = st.sidebar.multiselect(label, options, default=["All"])
+    if "All" not in selected:
+        temp_df = temp_df[temp_df[col_name].isin(selected)]
+    return selected, temp_df
+
+selected_shire, filtered_df = multi_select_filter('shire', "Select Shire", enriched_df)
+selected_project, filtered_df = multi_select_filter('project', "Select Project", filtered_df,
+                                                    parent_filter=('shire', selected_shire))
+selected_pm, filtered_df = multi_select_filter('projectmanager', "Select Project Manager", filtered_df,
+                                               parent_filter=('shire', selected_shire))
+selected_segment, filtered_df = multi_select_filter('segmentcode', "Select Segment Code", filtered_df)
+selected_type, filtered_df = multi_select_filter('type', "Select Type", filtered_df)
+
+# -------------------------------
+# --- Optional: Show Fuzzy Matches in Sidebar ---
+# -------------------------------
+if pid_df is not None and allow_fuzzy:
+    num_matches = filtered_df["matched_project_description"].notna().sum()
+    st.sidebar.info(f"Fuzzy matched project descriptions: {num_matches} rows matched ≥70%")
+
+# -------------------------------
+# --- Continue with your existing dashboard logic ---
+# Use `filtered_df` everywhere instead of `agg_view` or `df`
+# -------------------------------
+st.write("Filtered data preview:")
+st.dataframe(filtered_df.head(10))
 
     # -------------------------------
     # --- Date Filter ---
