@@ -15,6 +15,10 @@ import plotly.graph_objects as go
 import matplotlib.pyplot as plt
 import requests
 from streamlit import cache_data
+from docx import Document
+from docx.shared import Pt
+from docx.enum.text import WD_COLOR_INDEX
+from collections import OrderedDict
 
 # --- Page config for wide layout ---
 st.set_page_config(
@@ -98,6 +102,77 @@ def get_weather_forecast(api_key, location="Ayrshire"):
         st.error(f"Forecast API error: {e}")
         return None
 
+
+def poles_to_word(df: pd.DataFrame) -> BytesIO:
+    doc = Document()
+
+    # Defensive cleaning
+    df = df.copy()
+    df = df.replace(
+        to_replace=["nan", "NaN", "None", None],
+        value=""
+    )
+
+    grouped = df.groupby('pole', sort=False)
+
+    for pole, group in grouped:
+        pole_str = str(pole).strip()
+        if not pole_str:
+            continue
+
+        # Ordered set using dict keys (preserves order, removes duplicates)
+        unique_texts = OrderedDict()
+
+        for _, row in group.iterrows():
+            parts = []
+
+            wi = str(row.get('Work instructions', '')).strip()
+            comment = str(row.get('comment', '')).strip()
+
+            if wi:
+                parts.append(wi)
+
+            if comment:
+                parts.append(f"({comment})")
+
+            if parts:
+                text = " ".join(parts)
+
+                # Normalize for deduplication
+                normalized = text.lower().strip()
+
+                unique_texts[normalized] = text
+
+        if not unique_texts:
+            continue
+
+        # Bullet paragraph
+        p = doc.add_paragraph(style='List Bullet')
+
+        run_number = p.add_run(f"{pole_str} – ")
+        run_number.bold = True
+        run_number.font.name = 'Times New Roman'
+        run_number.font.size = Pt(12)
+
+        texts = list(unique_texts.values())
+
+        for i, text in enumerate(texts):
+            run_item = p.add_run(text)
+            run_item.bold = True
+            run_item.font.name = 'Times New Roman'
+            run_item.font.size = Pt(12)
+
+            if "Erect Pole" in text:
+                run_item.font.highlight_color = WD_COLOR_INDEX.RED
+
+            if i < len(texts) - 1:
+                p.add_run(" ; ")
+
+    buffer = BytesIO()
+    doc.save(buffer)
+    buffer.seek(0)
+    return buffer
+    
 # --- MAPPINGS ---
 
 # --- Project Manager Mapping ---
@@ -674,6 +749,9 @@ if aggregated_file is not None:
         # Handle case where column is missing
         df['datetouse_dt'] = pd.NaT
         df['datetouse_display'] = "Unplanned"
+        
+    # Create agg_view for later use
+    agg_view = df.copy()
 
 # --- Load Resume Parquet file (for %Complete pie chart) ---
 resume_file = r"CF_resume.parquet"
@@ -682,11 +760,13 @@ if resume_file is not None:
     resume_df.columns = resume_df.columns.str.strip().str.lower()  # normalize columns
 
 # --- Load Miscellaneous Parquet file ---
-misc_file = r"Miscelaneous.parquet"
+misc_file = "miscelaneous.parquet"
+misc_df = None
+
 if misc_file is not None:
     try:
         misc_df = pd.read_parquet(misc_file)
-        misc_df.columns = misc_df.columns.str.strip().str.lower()  # normalize columns
+        misc_df.columns = misc_df.columns.str.strip().str.lower()
     except Exception as e:
         st.warning(f"Could not load Miscellaneous parquet: {e}")
 
@@ -775,6 +855,7 @@ if misc_file is not None:
     money_logo_base64 = base64.b64encode(buffered.getvalue()).decode()
 
     # Display Total & Variation (Centered)
+    st.markdown("<h2>Financial</h2>", unsafe_allow_html=True)
     st.markdown("<h3 style='text-align:center; color:white;'>Revenue</h3>", unsafe_allow_html=True)
     try:
         st.markdown(
@@ -829,7 +910,7 @@ if misc_file is not None:
                     mode='lines+markers',
                     line=dict(width=3, color='#32CD32'),
                     marker=dict(size=6, color='#32CD32'),
-                    hovertemplate='<b>Date: %{x}</b><br>Revenue: €%{y:,.0f}<extra></extra>'
+                    hovertemplate='<b>Date: %{x}</b><br>Revenue: £%{y:,.0f}<extra></extra>'
                 )
                 fig_revenue.update_layout(
                     height=600,  # taller chart
@@ -844,7 +925,7 @@ if misc_file is not None:
                         type='date'
                     ),
                     yaxis=dict(
-                        title='Revenue (€)',
+                        title='Revenue (£)',
                         tickformat=",.0f",
                         gridcolor='rgba(128,128,128,0.2)',
                         autorange=True,
@@ -1138,7 +1219,7 @@ if misc_file is not None:
 # -------------------------------
 # --- Mapping Bar Charts + Drill-down + Excel Export ---
 # -------------------------------
-    st.header("📊 Mapping Charts")
+    st.header("🪵 Materials")
     convert_to_miles = st.checkbox("Convert Equipment/Conductor Length to Miles")
 
     categories = [
@@ -1168,6 +1249,19 @@ if misc_file is not None:
         if 'item' not in filtered_df.columns or 'mapped' not in filtered_df.columns:
             st.warning("Missing required columns: item / mapped")
             continue
+            
+        # Merge misc_df to bring Column_K into filtered_df
+        # Map Column_K values from misc_df into filtered_df
+        if misc_df is not None:
+            # Ensure keys are strings
+            filtered_df['item'] = filtered_df['item'].astype(str)
+            misc_df['column_b'] = misc_df['column_b'].astype(str)
+
+            # Create a mapping dictionary: item -> Column_K
+            item_to_column_k = misc_df.set_index('column_b')['column_k'].to_dict()
+
+            # Add a new column with the mapped values
+            filtered_df['material code'] = filtered_df['item'].map(item_to_column_k)
 
         # Build regex pattern for this category’s keys
         pattern = '|'.join([re.escape(k) for k in keys.keys()])
@@ -1277,8 +1371,8 @@ if misc_file is not None:
 
 
             # Your original approach but working:
-            extra_cols = ['pole','qsub','poling team','team_name', 'projectmanager', 'project', 'shire', 'segmentdesc','segmentcode', 'sourcefile']
-
+            extra_cols = ['poling team','team_name','segmentdesc','segmentcode', 'projectmanager', 'project', 'shire','material code' , 'sourcefile']
+            
             # Rename first
             selected_rows = selected_rows.rename(columns={
                 "poling team": "code", 
@@ -1289,9 +1383,11 @@ if misc_file is not None:
             extra_cols = [c if c != "poling team" else "code" for c in extra_cols]
             extra_cols = [c if c != "team_name" else "team lider" for c in extra_cols]
 
+
             # Filter to only existing columns
             extra_cols = [c for c in extra_cols if c in selected_rows.columns]
-
+            # DEBUG: show the final columns being used
+            st.write("🔹 Information Resumed:")
             # Create display date
             if 'datetouse' in selected_rows.columns:
                 selected_rows['datetouse_display'] = pd.to_datetime(
@@ -1299,7 +1395,7 @@ if misc_file is not None:
                 ).dt.strftime("%d/%m/%Y")
                 selected_rows.loc[selected_rows['datetouse'].isna(), 'datetouse_display'] = "Unplanned"
 
-            display_cols = ['mapped', 'datetouse_display'] + extra_cols
+            display_cols = ['mapped','pole','qsub','datetouse_display'] + extra_cols
             display_cols = [c for c in display_cols if c in selected_rows.columns]
 
             if not selected_rows.empty:
@@ -1367,3 +1463,157 @@ if misc_file is not None:
                 file_name=f"{cat_name}_Details_Separated.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             )
+
+# -----------------------------
+# 🛠️ Works Section
+# -----------------------------
+st.header("🛠️ Works")
+
+if misc_df is not None:
+    # -----------------------------
+    # Data preparation
+    # -----------------------------
+    filtered_df['item'] = filtered_df['item'].astype(str)
+    misc_df['column_b'] = misc_df['column_b'].astype(str)
+
+    # Map items to work instructions
+    item_to_column_i = misc_df.set_index('column_b')['column_i'].to_dict()
+    poles_df = filtered_df[filtered_df['pole'].notna() & (filtered_df['pole'].astype(str).str.lower() != "nan")].copy()
+    poles_df['Work instructions'] = poles_df['item'].map(item_to_column_i)
+
+    # Keep only rows with valid instructions, comments, and team_name
+    poles_df_clean = poles_df.dropna(subset=['Work instructions', 'comment', 'team_name'])[
+        ['pole', 'segmentcode', 'Work instructions', 'comment', 'team_name']
+    ]
+
+    # -----------------------------
+    # 🔘 Segment selector
+    # -----------------------------
+    segment_options = ['All'] + sorted(poles_df_clean['segmentcode'].dropna().astype(str).unique())
+    selected_segment = st.selectbox("Select a segment code:", segment_options)
+
+    if selected_segment != 'All':
+        poles_df_view = poles_df_clean[poles_df_clean['segmentcode'].astype(str) == selected_segment]
+    else:
+        poles_df_view = poles_df_clean.copy()
+
+    # -----------------------------
+    # 🎯 Pole selector (Cascading)
+    # -----------------------------
+    pole_options = sorted(poles_df_view['pole'].dropna().astype(str).unique())
+    selected_pole = st.selectbox("Select a pole to view details:", ["All"] + pole_options)
+
+    # Filter by selected pole
+    if selected_pole != "All":
+        poles_df_view = poles_df_view[poles_df_view['pole'].astype(str) == selected_pole]
+
+    # Display pole details if one is selected
+    if selected_pole != "All" and not poles_df_view.empty:
+        st.write(f"Details for pole **{selected_pole}**:")
+        st.dataframe(poles_df_view)
+
+    # -----------------------------
+    # 📊 Pie chart (Works breakdown)
+    # -----------------------------
+
+    if not poles_df_view.empty:
+        # Count work instructions and remove NaN / empty strings
+        work_data = (
+            poles_df_view['Work instructions']
+            .astype(str)
+            .str.lower()
+            .replace('nan', pd.NA)
+            .dropna()  # remove NaN
+            .value_counts()
+            .reset_index()
+        )
+        work_data.columns = ['Work instructions', 'total']
+
+        if not work_data.empty:
+            fig_work = px.pie(
+                work_data,
+                names='Work instructions',
+                values='total',
+                hole=0.4
+            )
+            fig_work.update_traces(textinfo='percent+label', textfont_size=16)
+            fig_work.update_layout(paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)', showlegend=False)
+            st.plotly_chart(fig_work, use_container_width=True)
+        else:
+            st.info("No valid work instructions available for the selected filters.")
+    # -----------------------------
+    # 📄 Word export
+    # -----------------------------
+    if not poles_df_view.empty:
+        word_file = poles_to_word(poles_df_view)
+        st.download_button(
+            label="⬇️ Download Work Instructions (.docx)",
+            data=word_file,
+            file_name="Pole_Work_Instructions.docx",
+            mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        )
+
+# -----------------------------
+# 📈 Jobs per Team per Day (Segment + Pole aware)
+# -----------------------------
+st.subheader("📈 Jobs per Team per Day")
+
+if agg_view is not None and 'total' in agg_view.columns:
+    filtered_agg = agg_view.copy()
+
+    # Apply segment filter
+    if selected_segment != 'All' and 'segmentcode' in filtered_agg.columns:
+        filtered_agg = filtered_agg[
+            filtered_agg['segmentcode'].astype(str).str.strip() == str(selected_segment).strip()
+        ]
+
+    # Apply pole filter
+    if selected_pole != "All" and 'pole' in filtered_agg.columns:
+        filtered_agg = filtered_agg[
+            filtered_agg['pole'].astype(str).str.strip() == str(selected_pole).strip()
+        ]
+
+    # Ensure datetime column
+    if 'datetouse_dt' not in filtered_agg.columns:
+        filtered_agg['datetouse_dt'] = pd.to_datetime(filtered_agg['datetouse'], errors='coerce')
+    else:
+        filtered_agg['datetouse_dt'] = pd.to_datetime(filtered_agg['datetouse_dt'], errors='coerce')
+
+    # Ensure 'total' is numeric
+    filtered_agg['total'] = pd.to_numeric(filtered_agg['total'], errors='coerce').fillna(0)
+
+    # Drop invalid rows
+    filtered_agg = filtered_agg.dropna(subset=['datetouse_dt', 'team_name'])
+
+    if not filtered_agg.empty:
+        # Aggregate per day per team
+        time_df = filtered_agg.groupby(['datetouse_dt', 'team_name'], as_index=False)['total'].sum()
+
+        # Plot line chart
+        fig_time = px.line(
+            time_df,
+            x='datetouse_dt',
+            y='total',
+            color='team_name',
+            markers=True,
+            hover_data={'datetouse_dt': True, 'team_name': True, 'total': True}
+        )
+        fig_time.update_layout(
+            xaxis_title="Day",
+            yaxis_title="Total Jobs £",
+            xaxis=dict(
+                tickformat="%d/%m/%Y",
+                tickangle=45,
+                nticks=10,
+                tickmode='auto',
+            ),
+            paper_bgcolor='rgba(0,0,0,0)',
+            plot_bgcolor='rgba(0,0,0,0)',
+            legend_title_text="Team",
+            height=500
+        )
+        st.plotly_chart(fig_time, use_container_width=True)
+    else:
+        st.info("No time-based data available for the selected filters.")
+else:
+    st.info("No 'total' column found in aggregated data.")
