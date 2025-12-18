@@ -801,24 +801,22 @@ def normalize_cols(df):
     return df
 
 # -------------------------------
-# --- Prepare DataFrames ---
+# --- Prepare Dataframes ---
 # -------------------------------
-enriched_df = normalize_cols(agg_view)  # agg_view = aggregated parquet
-
+enriched_df = normalize_cols(agg_view)  # your aggregated view
 if pid_df is not None:
     pid_df = normalize_cols(pid_df)
 
-# Merge keys
 merge_keys = ["project", "shire", "pid_ohl_nr"]
 
-# Ensure merge keys exist in both dataframes
+# Ensure all merge keys exist in both dataframes
 for col in merge_keys:
     if col not in enriched_df.columns:
         enriched_df[col] = ""
     if col not in pid_df.columns:
         pid_df[col] = ""
 
-# Strip and lowercase
+# Strip & lowercase merge keys to avoid mismatch
 for col in merge_keys:
     enriched_df[col] = enriched_df[col].astype(str).str.strip().str.lower()
     pid_df[col] = pid_df[col].astype(str).str.strip().str.lower()
@@ -838,14 +836,17 @@ except Exception as e:
     st.warning(f"Merge failed: {e}")
 
 # -------------------------------
-# --- Optional Fuzzy Matching ---
+# --- Fuzzy Matching (Optional) ---
 # -------------------------------
 allow_fuzzy = st.sidebar.checkbox(
     "Allow fuzzy matching between Segment and Project Description (≥70%)",
     value=True
 )
 
-if allow_fuzzy and 'project_description' in pid_df.columns and 'segmentdesc' in enriched_df.columns:
+if allow_fuzzy and pid_df is not None \
+        and 'project_description' in pid_df.columns \
+        and 'segmentdesc' in enriched_df.columns:
+
     from rapidfuzz import process, fuzz
 
     pid_df['project_description'] = pid_df['project_description'].astype(str).fillna("")
@@ -853,10 +854,14 @@ if allow_fuzzy and 'project_description' in pid_df.columns and 'segmentdesc' in 
 
     project_desc_list = pid_df['project_description'].unique().tolist()
 
+    # --- Safe fuzzy match function ---
     def fuzzy_match_segment(segment_desc, project_desc_list):
-        if not segment_desc:
+        if not segment_desc or not project_desc_list:
             return None, 0
-        match, score = process.extractOne(segment_desc, project_desc_list, scorer=fuzz.partial_ratio)
+        result = process.extractOne(segment_desc, project_desc_list, scorer=fuzz.partial_ratio)
+        if result is None:
+            return None, 0
+        match, score = result[0], result[1]
         return match, score
 
     fuzzy_results = enriched_df.apply(
@@ -867,6 +872,7 @@ if allow_fuzzy and 'project_description' in pid_df.columns and 'segmentdesc' in 
     enriched_df["matched_project_description"] = fuzzy_results[0]
     enriched_df["match_score"] = fuzzy_results[1]
     enriched_df.loc[enriched_df["match_score"] < 70, "matched_project_description"] = None
+
 else:
     enriched_df["matched_project_description"] = None
     enriched_df["match_score"] = None
