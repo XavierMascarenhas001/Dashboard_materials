@@ -11,6 +11,6 @@ openpyxl
 matplotlib
 python-docx
 rapidfuzz
-pyarrow
+
 
 
