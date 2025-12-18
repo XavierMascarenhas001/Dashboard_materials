@@ -793,94 +793,89 @@ except Exception as e:
 # --- Merge Aggregated DF with Metadata ---
 # -------------------------------
 # -------------------------------
-# --- Normalize Columns ---
+# --- Normalize Columns Function ---
 # -------------------------------
 def normalize_cols(df):
     df = df.copy()
     df.columns = df.columns.str.strip().str.lower().str.replace(" ", "_")
     return df
 
-enriched_df = normalize_cols(agg_view)
+# -------------------------------
+# --- Prepare DataFrames ---
+# -------------------------------
+enriched_df = normalize_cols(agg_view)  # agg_view = aggregated parquet
+
 if pid_df is not None:
     pid_df = normalize_cols(pid_df)
 
-# -------------------------------
-# --- Ensure merge keys exist ---
-# -------------------------------
+# Merge keys
 merge_keys = ["project", "shire", "pid_ohl_nr"]
 
+# Ensure merge keys exist in both dataframes
 for col in merge_keys:
     if col not in enriched_df.columns:
         enriched_df[col] = ""
-    if pid_df is not None and col not in pid_df.columns:
+    if col not in pid_df.columns:
         pid_df[col] = ""
 
 # Strip and lowercase
 for col in merge_keys:
     enriched_df[col] = enriched_df[col].astype(str).str.strip().str.lower()
-    if pid_df is not None:
-        pid_df[col] = pid_df[col].astype(str).str.strip().str.lower()
+    pid_df[col] = pid_df[col].astype(str).str.strip().str.lower()
 
 # -------------------------------
 # --- Merge ---
 # -------------------------------
-if pid_df is not None:
-    try:
-        enriched_df = enriched_df.merge(
-            pid_df,
-            on=merge_keys,
-            how="left",
-            suffixes=("", "_meta")
-        )
-        st.sidebar.success("Merged dataframe with metadata successfully")
-    except Exception as e:
-        st.warning(f"Merge failed: {e}")
+try:
+    enriched_df = enriched_df.merge(
+        pid_df,
+        on=merge_keys,
+        how="left",
+        suffixes=("", "_meta")
+    )
+    st.sidebar.success("Enriched dataframe merged with metadata successfully")
+except Exception as e:
+    st.warning(f"Merge failed: {e}")
 
 # -------------------------------
-# --- Fuzzy Matching (Optimized) ---
+# --- Optional Fuzzy Matching ---
 # -------------------------------
 allow_fuzzy = st.sidebar.checkbox(
     "Allow fuzzy matching between Segment and Project Description (≥70%)",
     value=True
 )
 
-enriched_df['matched_project_description'] = None
-enriched_df['match_score'] = None
+if allow_fuzzy and 'project_description' in pid_df.columns and 'segmentdesc' in enriched_df.columns:
+    from rapidfuzz import process, fuzz
 
-if allow_fuzzy and pid_df is not None:
-    # Clean project_description
-    project_desc_list = [str(x).strip() for x in pid_df['project_description'].dropna().unique() if str(x).strip()]
-    enriched_df['segmentdesc'] = enriched_df['segmentdesc'].astype(str).fillna("").str.strip()
+    pid_df['project_description'] = pid_df['project_description'].astype(str).fillna("")
+    enriched_df['segmentdesc'] = enriched_df['segmentdesc'].astype(str).fillna("")
 
-    # Only apply to non-empty segmentdesc
-    mask = enriched_df['segmentdesc'] != ""
-    if project_desc_list:
-        results = enriched_df.loc[mask, 'segmentdesc'].apply(
-            lambda x: process.extractOne(x, project_desc_list, scorer=fuzz.partial_ratio)
-        )
-        enriched_df.loc[mask, 'matched_project_description'] = [r[0] for r in results]
-        enriched_df.loc[mask, 'match_score'] = [r[1] for r in results]
+    project_desc_list = pid_df['project_description'].unique().tolist()
 
-        # Remove low-score matches
-        enriched_df.loc[enriched_df['match_score'] < 70, 'matched_project_description'] = None
+    def fuzzy_match_segment(segment_desc, project_desc_list):
+        if not segment_desc:
+            return None, 0
+        match, score = process.extractOne(segment_desc, project_desc_list, scorer=fuzz.partial_ratio)
+        return match, score
 
-
-
-# -------------------------------
-# --- Display Filtered List ---
-# -------------------------------
-st.subheader("Filtered Project List")
-st.dataframe(filtered_df[extra_cols], use_container_width=True)
-st.write(f"**Total records:** {len(filtered_df)}")
+    fuzzy_results = enriched_df.apply(
+        lambda row: fuzzy_match_segment(row.get("segmentdesc", ""), project_desc_list),
+        axis=1,
+        result_type="expand"
+    )
+    enriched_df["matched_project_description"] = fuzzy_results[0]
+    enriched_df["match_score"] = fuzzy_results[1]
+    enriched_df.loc[enriched_df["match_score"] < 70, "matched_project_description"] = None
+else:
+    enriched_df["matched_project_description"] = None
+    enriched_df["match_score"] = None
 
 # -------------------------------
 # --- Sidebar Filters ---
 # -------------------------------
 st.sidebar.header("Filter Options")
 
-# -------------------------------
-# --- Sidebar Filters Function ---
-# -------------------------------
 def multi_select_filter(col_name, label, df, parent_filter=None):
     if col_name not in df.columns:
         return ["All"], df
@@ -893,19 +888,14 @@ def multi_select_filter(col_name, label, df, parent_filter=None):
         temp_df = temp_df[temp_df[col_name].isin(selected)]
     return selected, temp_df
 
-# -------------------------------
-# --- Apply Filters ---
-# -------------------------------
-selected_shire, filtered_df = multi_select_filter('shire', "Select Shire", enriched_df)
+# Start with full enriched_df
+filtered_df = enriched_df.copy()
+
+selected_shire, filtered_df = multi_select_filter('shire', "Select Shire", filtered_df)
 selected_project, filtered_df = multi_select_filter('project', "Select Project", filtered_df, parent_filter=('shire', selected_shire))
 selected_pm, filtered_df = multi_select_filter('projectmanager', "Select Project Manager", filtered_df, parent_filter=('shire', selected_shire))
 selected_segment, filtered_df = multi_select_filter('segmentcode', "Select Segment Code", filtered_df)
 selected_type, filtered_df = multi_select_filter('type', "Select Type", filtered_df)
-
-# Optional: Show fuzzy matches info
-if pid_df is not None and allow_fuzzy:
-    num_matches = filtered_df["matched_project_description"].notna().sum() if "matched_project_description" in filtered_df.columns else 0
-    st.sidebar.info(f"Fuzzy matched project descriptions: {num_matches} rows matched ≥70%")
 
 # -------------------------------
 # --- Date Filter ---
@@ -1489,24 +1479,22 @@ if 'datetouse' in filtered_df.columns:
             extra_cols = ['poling team','team_name','segmentdesc','segmentcode', 'projectmanager', 'project', 'shire','material code' , 'sourcefile','pid_ohl_nr']
 
             # --- Rename columns for display ---
-            selected_rows = selected_rows.rename(columns={
+            rename_map = {
                 "poling team": "code", 
                 "team_name": "team lider"
-            })
+            }
+            selected_rows = selected_rows.rename(columns=rename_map)
 
             # Update extra_cols to match renamed columns
-            extra_cols = [c if c != "poling team" else "code" for c in extra_cols]
-            extra_cols = [c if c != "team_name" else "team lider" for c in extra_cols]
+            for old, new in rename_map.items():
+                extra_cols = [new if c == old else c for c in extra_cols]
 
             # Ensure all extra_cols exist in selected_rows
             for col in extra_cols:
                 if col not in selected_rows.columns:
                     selected_rows[col] = None
-            
-            # Filter extra_cols to only columns that exist
-            extra_cols = [c for c in extra_cols if c in selected_rows.columns]
 
-            # --- Create display date ---
+            # --- Create display date column ---
             if 'datetouse' in selected_rows.columns:
                 selected_rows['datetouse_display'] = pd.to_datetime(
                     selected_rows['datetouse'], errors='coerce'
@@ -1519,10 +1507,9 @@ if 'datetouse' in filtered_df.columns:
 
             # --- Display dataframe ---
             if not selected_rows.empty:
-                st.subheader("🔹 Information Resumed")
                 st.dataframe(selected_rows[display_cols], use_container_width=True)
                 st.write(f"**Total records:** {len(selected_rows)}")
-
+    
                 if 'qsub_clean' in selected_rows.columns:
                     total_qsub = selected_rows['qsub_clean'].sum()
                     st.write(f"Total QSUB: {total_qsub:,.2f}")
