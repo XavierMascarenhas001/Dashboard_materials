@@ -731,7 +731,7 @@ st.markdown("<h1>📊 Data Management Dashboard</h1>", unsafe_allow_html=True)
 # -------------------------------
 # --- Upload Aggregated Parquet file ---
 # --- Load aggregated Parquet file ---
-aggregated_file = r"CF_aggregated.parquet"
+aggregated_file = r"Master.parquet"
 if aggregated_file is not None:
     df = pd.read_parquet(aggregated_file)
     df.columns = df.columns.str.strip().str.lower()  # normalize columns
@@ -758,17 +758,6 @@ resume_file = r"CF_resume.parquet"
 if resume_file is not None:
     resume_df = pd.read_parquet(resume_file)
     resume_df.columns = resume_df.columns.str.strip().str.lower()  # normalize columns
-
-# --- Load Miscellaneous Parquet file ---
-misc_file = "miscelaneous.parquet"
-misc_df = None
-
-if misc_file is not None:
-    try:
-        misc_df = pd.read_parquet(misc_file)
-        misc_df.columns = misc_df.columns.str.strip().str.lower()
-    except Exception as e:
-        st.warning(f"Could not load Miscellaneous parquet: {e}")
 
     # -------------------------------
     # --- Sidebar Filters ---
@@ -1250,19 +1239,6 @@ if misc_file is not None:
             st.warning("Missing required columns: item / mapped")
             continue
             
-        # Merge misc_df to bring Column_K into filtered_df
-        # Map Column_K values from misc_df into filtered_df
-        if misc_df is not None:
-            # Ensure keys are strings
-            filtered_df['item'] = filtered_df['item'].astype(str)
-            misc_df['column_b'] = misc_df['column_b'].astype(str)
-
-            # Create a mapping dictionary: item -> Column_K
-            item_to_column_k = misc_df.set_index('column_b')['column_k'].to_dict()
-
-            # Add a new column with the mapped values
-            filtered_df['material code'] = filtered_df['item'].map(item_to_column_k)
-
         # Build regex pattern for this category’s keys
         pattern = '|'.join([re.escape(k) for k in keys.keys()])
 
@@ -1371,7 +1347,7 @@ if misc_file is not None:
 
 
             # Your original approach but working:
-            extra_cols = ['poling team','team_name','segmentdesc','segmentcode', 'projectmanager', 'project', 'shire','material code' , 'sourcefile']
+            extra_cols = ['poling team','team_name','segmentdesc','segmentcode', 'projectmanager', 'project', 'shire','material code' ,'pid_ohl_nr', 'sourcefile' ]
             
             # Rename first
             selected_rows = selected_rows.rename(columns={
