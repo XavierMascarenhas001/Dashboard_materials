@@ -176,6 +176,29 @@ def poles_to_word(df: pd.DataFrame) -> BytesIO:
     doc.save(buffer)
     buffer.seek(0)
     return buffer
+
+
+def normalize_cols(df):
+    df = df.copy()
+    df.columns = (
+        df.columns
+        .str.strip()
+        .str.lower()
+        .str.replace(" ", "_")
+    )
+    return df
+
+
+def safe_read_parquet(path, label=None):
+    try:
+        df = pd.read_parquet(path, engine="pyarrow")
+        df = normalize_cols(df)
+        if label:
+            st.sidebar.success(f"{label} loaded")
+        return df
+    except Exception as e:
+        st.sidebar.error(f"Failed to load {path}: {e}")
+        return None
 # -------------------------------
 # --- Sidebar Filters Function ---
 # -------------------------------
@@ -737,210 +760,157 @@ st.markdown("<h1>📊 Data Management Dashboard</h1>", unsafe_allow_html=True)
 # --- File Upload & Initial DF ---
 # -------------------------------
 # --- Load aggregated Parquet file ---
-aggregated_file = r"CF_aggregated.parquet"
-if aggregated_file is not None:
-    df = pd.read_parquet(aggregated_file)
-    df.columns = df.columns.str.strip().str.lower()  # normalize columns
-
-    if 'datetouse' in df.columns:
-        # Convert to datetime where possible
-        df['datetouse_dt'] = pd.to_datetime(df['datetouse'], errors='coerce')
-        # Create display column
-        df['datetouse_display'] = df['datetouse_dt'].dt.strftime("%d/%m/%Y")
-        # Mark empty dates as "Unplanned"
-        df.loc[df['datetouse_dt'].isna(), 'datetouse_display'] = "Unplanned"
-        # OPTIONAL: normalize datetime column for sorting, keeping NaT intact
-        df['datetouse_dt'] = df['datetouse_dt'].dt.normalize()
-    else:
-        # Handle case where column is missing
-        df['datetouse_dt'] = pd.NaT
-        df['datetouse_display'] = "Unplanned"
-        
-    # Create agg_view for later use
-    agg_view = df.copy()
-
-# --- Load Resume Parquet file (for %Complete pie chart) ---
-resume_file = r"CF_resume.parquet"
-if resume_file is not None:
-    resume_df = pd.read_parquet(resume_file)
-    resume_df.columns = resume_df.columns.str.strip().str.lower()  # normalize columns
-
-# --- Load Miscellaneous Parquet file ---
-misc_file = "miscelaneous.parquet"
-misc_df = None
-
-if misc_file is not None:
-    try:
-        misc_df = pd.read_parquet(misc_file)
-        misc_df.columns = misc_df.columns.str.strip().str.lower()
-    except Exception as e:
-        st.warning(f"Could not load Miscellaneous parquet: {e}")
-
-# -------------------------------
-# --- Upload Planning / Scope Parquet ---
-
-pid_file = "Resume_PID.parquet"  # rename as needed
-pid_df = None
-
-try:
-    pid_df = pd.read_parquet(pid_file, engine="pyarrow")
-    pid_df.columns = pid_df.columns.str.strip().str.lower()
-    st.sidebar.success("Planning / Scope metadata loaded")
-except Exception as e:
-    st.sidebar.error(f"Failed to load Planning / Scope parquet: {e}")
-
-# -------------------------------
-# --- Merge Aggregated DF with Metadata ---
-# -------------------------------
-# -------------------------------
-# --- Normalize Columns Function ---
-# -------------------------------
-def normalize_cols(df):
-    df = df.copy()
-    df.columns = df.columns.str.strip().str.lower().str.replace(" ", "_")
+@st.cache_data(show_spinner=False)
+def load_parquet(path):
+    df = pd.read_parquet(path)
+    df.columns = df.columns.str.strip().str.lower()
     return df
 
-# -------------------------------
-# --- Prepare Dataframes ---
-# -------------------------------
-enriched_df = normalize_cols(agg_view)  # your aggregated view
-if pid_df is not None:
-    pid_df = normalize_cols(pid_df)
+agg_view = load_parquet("CF_aggregated.parquet")
+resume_df = load_parquet("CF_resume.parquet")
+misc_df = load_parquet("miscelaneous.parquet")
+pid_df = load_parquet("Resume_PID.parquet")
+
+if "datetouse" in agg_view.columns:
+    agg_view["datetouse_dt"] = pd.to_datetime(
+        agg_view["datetouse"], errors="coerce"
+    ).dt.normalize()
+
+    agg_view["datetouse_display"] = agg_view["datetouse_dt"].dt.strftime("%d/%m/%Y")
+    agg_view.loc[
+        agg_view["datetouse_dt"].isna(), "datetouse_display"
+    ] = "Unplanned"
+else:
+    agg_view["datetouse_dt"] = pd.NaT
+    agg_view["datetouse_display"] = "Unplanned"
+
 
 merge_keys = ["project", "shire", "pid_ohl_nr"]
 
-# Ensure all merge keys exist in both dataframes
-for col in merge_keys:
-    if col not in enriched_df.columns:
-        enriched_df[col] = ""
-    if col not in pid_df.columns:
-        pid_df[col] = ""
+def normalize_merge_keys(df, keys):
+    for k in keys:
+        if k not in df.columns:
+            df[k] = ""
+        df[k] = df[k].astype(str).str.strip().str.lower()
+    return df
 
-# Strip & lowercase merge keys to avoid mismatch
-for col in merge_keys:
-    enriched_df[col] = enriched_df[col].astype(str).str.strip().str.lower()
-    pid_df[col] = pid_df[col].astype(str).str.strip().str.lower()
+agg_view = normalize_merge_keys(agg_view, merge_keys)
+pid_df = normalize_merge_keys(pid_df, merge_keys)
 
-# -------------------------------
-# --- Merge ---
-# -------------------------------
-try:
-    enriched_df = enriched_df.merge(
-        pid_df,
-        on=merge_keys,
-        how="left",
-        suffixes=("", "_meta")
-    )
-    st.sidebar.success("Enriched dataframe merged with metadata successfully")
-except Exception as e:
-    st.warning(f"Merge failed: {e}")
-
-# -------------------------------
-# --- Fuzzy Matching (Optional) ---
-# -------------------------------
-allow_fuzzy = st.sidebar.checkbox(
-    "Allow fuzzy matching between Segment and Project Description (≥70%)",
-    value=True
+enriched_df = agg_view.merge(
+    pid_df,
+    on=merge_keys,
+    how="left",
+    suffixes=("", "_meta")
 )
 
-if allow_fuzzy and pid_df is not None \
-        and 'project_description' in pid_df.columns \
-        and 'segmentdesc' in enriched_df.columns:
 
-    from rapidfuzz import process, fuzz
 
-    pid_df['project_description'] = pid_df['project_description'].astype(str).fillna("")
-    enriched_df['segmentdesc'] = enriched_df['segmentdesc'].astype(str).fillna("")
-
-    project_desc_list = pid_df['project_description'].unique().tolist()
-
-    # --- Safe fuzzy match function ---
-    def fuzzy_match_segment(segment_desc, project_desc_list):
-        if not segment_desc or not project_desc_list:
+@st.cache_data(show_spinner=False)
+def fuzzy_match_series(segment_series, project_descs):
+    def match(seg):
+        if not seg:
             return None, 0
-        result = process.extractOne(segment_desc, project_desc_list, scorer=fuzz.partial_ratio)
-        if result is None:
-            return None, 0
-        match, score = result[0], result[1]
-        return match, score
+        res = process.extractOne(seg, project_descs, scorer=fuzz.partial_ratio)
+        return res if res else (None, 0)
 
-    fuzzy_results = enriched_df.apply(
-        lambda row: fuzzy_match_segment(row.get("segmentdesc", ""), project_desc_list),
-        axis=1,
-        result_type="expand"
+    return segment_series.apply(lambda x: pd.Series(match(x)))
+
+allow_fuzzy = st.sidebar.checkbox("Allow fuzzy matching ≥70%", True)
+
+if (
+    allow_fuzzy
+    and "segmentdesc" in enriched_df.columns
+    and "project_description" in pid_df.columns
+):
+    project_descs = (
+        pid_df["project_description"]
+        .dropna()
+        .astype(str)
+        .unique()
+        .tolist()
     )
-    enriched_df["matched_project_description"] = fuzzy_results[0]
-    enriched_df["match_score"] = fuzzy_results[1]
-    enriched_df.loc[enriched_df["match_score"] < 70, "matched_project_description"] = None
 
+    enriched_df[["matched_project_description", "match_score"]] = (
+        fuzzy_match_series(
+            enriched_df["segmentdesc"].astype(str),
+            project_descs
+        )
+    )
+
+    enriched_df.loc[
+        enriched_df["match_score"] < 70,
+        "matched_project_description"
+    ] = None
 else:
     enriched_df["matched_project_description"] = None
     enriched_df["match_score"] = None
-
 # -------------------------------
 # --- Sidebar Filters ---
 # -------------------------------
-st.sidebar.header("Filter Options")
-
-def multi_select_filter(col_name, label, df, parent_filter=None):
-    if col_name not in df.columns:
-        return ["All"], df
-    temp_df = df.copy()
-    if parent_filter is not None and "All" not in parent_filter[1]:
-        temp_df = temp_df[temp_df[parent_filter[0]].isin(parent_filter[1])]
-    options = ["All"] + sorted(temp_df[col_name].dropna().unique())
-    selected = st.sidebar.multiselect(label, options, default=["All"])
-    if "All" not in selected:
-        temp_df = temp_df[temp_df[col_name].isin(selected)]
-    return selected, temp_df
-
-# Start with full enriched_df
 filtered_df = enriched_df.copy()
 
-selected_shire, filtered_df = multi_select_filter('shire', "Select Shire", filtered_df)
-selected_project, filtered_df = multi_select_filter('project', "Select Project", filtered_df, parent_filter=('shire', selected_shire))
-selected_pm, filtered_df = multi_select_filter('projectmanager', "Select Project Manager", filtered_df, parent_filter=('shire', selected_shire))
-selected_segment, filtered_df = multi_select_filter('segmentcode', "Select Segment Code", filtered_df)
-selected_type, filtered_df = multi_select_filter('type', "Select Type", filtered_df)
+def multi_select_filter(col, label, df, parent=None):
+    if col not in df.columns:
+        return ["All"], df
+
+    temp = df.copy()
+    if parent and "All" not in parent[1]:
+        temp = temp[temp[parent[0]].isin(parent[1])]
+
+    options = ["All"] + sorted(temp[col].dropna().unique())
+    selected = st.sidebar.multiselect(label, options, default=["All"])
+
+    if "All" not in selected:
+        temp = temp[temp[col].isin(selected)]
+
+    return selected, temp
+
+
+selected_shire, filtered_df = multi_select_filter("shire", "Shire", filtered_df)
+selected_project, filtered_df = multi_select_filter(
+    "project", "Project", filtered_df, ("shire", selected_shire)
+)
+selected_pm, filtered_df = multi_select_filter(
+    "projectmanager", "Project Manager", filtered_df, ("shire", selected_shire)
+)
 
 # -------------------------------
 # --- Date Filter ---
 # -------------------------------
-filter_type = st.sidebar.selectbox(
-    "Filter by Date",
-    ["Single Day", "Week", "Month", "Year", "Custom Range", "Unplanned"]
-)
-date_range_str = ""
+filtered_df = enriched_df.copy()
 
-if 'datetouse' in filtered_df.columns:
-    if filter_type == "Single Day":
-        date_selected = st.sidebar.date_input("Select date")
-        filtered_df = filtered_df[filtered_df['datetouse'] == pd.Timestamp(date_selected)]
-        date_range_str = str(date_selected)
-    elif filter_type == "Week":
-        week_start = st.sidebar.date_input("Week start date")
-        week_end = week_start + pd.Timedelta(days=6)
-        filtered_df = filtered_df[(filtered_df['datetouse'] >= pd.Timestamp(week_start)) &
-                                  (filtered_df['datetouse'] <= pd.Timestamp(week_end))]
-        date_range_str = f"{week_start} to {week_end}"
-    elif filter_type == "Month":
-        month_selected = st.sidebar.date_input("Pick any date in month")
-        filtered_df = filtered_df[(filtered_df['datetouse'].dt.month == month_selected.month) &
-                                  (filtered_df['datetouse'].dt.year == month_selected.year)]
-        date_range_str = month_selected.strftime("%B %Y")
-    elif filter_type == "Year":
-        year_selected = st.sidebar.number_input("Select year", min_value=2000, max_value=2100, value=2025)
-        filtered_df = filtered_df[filtered_df['datetouse'].dt.year == year_selected]
-        date_range_str = str(year_selected)
-    elif filter_type == "Custom Range":
-        start_date = st.sidebar.date_input("Start date")
-        end_date = st.sidebar.date_input("End date")
-        filtered_df = filtered_df[(filtered_df['datetouse'] >= pd.Timestamp(start_date)) &
-                                  (filtered_df['datetouse'] <= pd.Timestamp(end_date))]
-        date_range_str = f"{start_date} to {end_date}"
-    elif filter_type == "Unplanned":
-        filtered_df = filtered_df[filtered_df['datetouse'].isna()]
-        date_range_str = "Unplanned"
+def multi_select_filter(col, label, df, parent=None):
+    if col not in df.columns:
+        return ["All"], df
+
+    temp = df.copy()
+    if parent and "All" not in parent[1]:
+        temp = temp[temp[parent[0]].isin(parent[1])]
+
+    options = ["All"] + sorted(temp[col].dropna().unique())
+    selected = st.sidebar.multiselect(label, options, default=["All"])
+
+    if "All" not in selected:
+        temp = temp[temp[col].isin(selected)]
+
+    return selected, temp
+
+selected_shire, filtered_df = multi_select_filter("shire", "Shire", filtered_df)
+selected_project, filtered_df = multi_select_filter(
+    "project", "Project", filtered_df, ("shire", selected_shire)
+)
+selected_pm, filtered_df = multi_select_filter(
+    "projectmanager", "Project Manager", filtered_df
+)
+
+# Apply misc material mapping ONCE
+if misc_df is not None and "item" in filtered_df.columns:
+    filtered_df["item"] = filtered_df["item"].astype(str)
+    misc_df["column_b"] = misc_df["column_b"].astype(str)
+
+    material_map = misc_df.set_index("column_b")["column_k"].to_dict()
+    filtered_df["material code"] = filtered_df["item"].map(material_map)
 
     # -------------------------------
     # --- Total & Variation Display ---
@@ -1361,19 +1331,6 @@ if 'datetouse' in filtered_df.columns:
             st.warning("Missing required columns: item / mapped")
             continue
             
-        # Merge misc_df to bring Column_K into filtered_df
-        # Map Column_K values from misc_df into filtered_df
-        if misc_df is not None:
-            # Ensure keys are strings
-            filtered_df['item'] = filtered_df['item'].astype(str)
-            misc_df['column_b'] = misc_df['column_b'].astype(str)
-
-            # Create a mapping dictionary: item -> Column_K
-            item_to_column_k = misc_df.set_index('column_b')['column_k'].to_dict()
-
-            # Add a new column with the mapped values
-            filtered_df['material code'] = filtered_df['item'].map(item_to_column_k)
-
         # Build regex pattern for this category’s keys
         pattern = '|'.join([re.escape(k) for k in keys.keys()])
 
