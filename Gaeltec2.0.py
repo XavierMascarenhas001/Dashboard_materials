@@ -277,7 +277,10 @@ file_project_mapping = {
     "11kv refur": ["Lanark", "11kv Refurb"],
     "lv & esqcr": ["Lanark", "LV"],
     "11kv rebuilt": ["Lanark", "11kV Rebuilt"],
-    "33kv rebuilt": ["Lanark", "33kV Rebuilt"]
+    "33kv rebuilt": ["Lanark", "33kV Rebuilt"],
+    "Hi5_4_Lanark_2026": ["Lanark", "11kV Refurb"],
+    "Hi5_4_Ayrshire_2026": ["Lanark", "11kV Refurb"],
+
 }
 
 # --- Pole Mappings (dictionary style, includes new additions) ---
